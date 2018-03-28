@@ -3,8 +3,10 @@ var http = require("http"),
 	express = require('express'),
 	app = express(),
 	fs = require('fs'),
-	bodyParser = require('body-parser');
-	
+	bodyParser = require('body-parser'),
+	async = require('async'),
+	mongoClient = require('mongodb').MongoClient;
+
 //设置跨域访问
 app.all('*', function(req, res, next) {
    res.header("Access-Control-Allow-Origin", "*");
@@ -16,18 +18,79 @@ app.all('*', function(req, res, next) {
 });
 app.use(bodyParser.json({ extended: false }));
 
-// 创建 application/x-www-form-urlencoded 编码解析  
-app.post('/user', function(req, res){
-	console.log(req.body)
-	res.send({
-          name: req.body.userInfo.name,
-          sex: req.body.userInfo.sex,
-          image: req.body.userInfo.image,
-          city: req.body.userInfo.city,
-          introduce: "这个人很懒，什么也没留下。",
-          hreat:0
-    })
+var url = "mongodb://localhost:27017/CC";
+
+mongoClient.connect(url,function(err,db){
+	var dbs = db.db("CC");
+	mongocallback(dbs)
 });
+function mongocallback(dbs){
+	var users = dbs.collection('user');
+	//获取用户信息及创建用户/更新用户
+	app.post('/user', function(req, res){
+		https.get("https://api.weixin.qq.com/sns/jscode2session?appid=wx433c5da9f8727025&secret=16b840a8b6eb1d4cb674934bdf717d52&js_code="+req.body.code+"&grant_type=authorization_code",function(ress){
+			var datas = {};
+	        ress.on('data', function(data){
+	            datas=data;
+	        })
+	        ress.on('end', function(data){
+	        	openid = JSON.parse(datas.toString()).openid;
+	        	var userfind = users.find({"openid":openid})
+		        userfind.toArray(function(err1, user) {
+		        	if(user.length == 0){
+		            	console.log("没有用户 开始创建");
+		            	var peoplenum = 0;
+		            	users.find().toArray(function(err2, user1) {
+		            		peoplenum = user1.length-0+1;
+		            		req.body.userInfo.openid = openid;
+		    				req.body.userInfo.uid = peoplenum;
+		    				req.body.userInfo.utype = 0;
+		    				users.insertOne(req.body.userInfo, function(err3, data) {
+			                    if(err3){
+			                    	console.log(err3);
+			                    }else{
+			                    	console.log("用户创建成功");
+			                    	delete req.body.userInfo.openid;
+			                    	delete req.body.userInfo._id;
+			                    	res.send(req.body.userInfo)
+			                    }
+			                });
+		            	})
+		            }else{
+		            	user = user[0];
+		            	user.name = req.body.userInfo.name;
+		            	user.sex = req.body.userInfo.sex;
+		            	user.image = req.body.userInfo.image;
+		            	user.city = req.body.userInfo.city;
+		            	users.updateOne({"openid":openid}, {$set:user}, function(err2, data) {
+					        if (!err2){
+						        console.log("用户更新成功");
+						        delete user.openid;
+						        delete user._id;
+				        		res.send(user);
+				        	}else{
+				        		console.log("err2")
+				        	}
+					    });
+		            	
+		            }
+		        });
+	        })
+        })
+	});
+	
+	//更改用户introduce
+	app.post("/setintroduce",function(req,res){
+		users.updateOne({"uid":req.body.uid}, {$set:{"introduce":req.body.introduce}}, function(err, data) {
+	        if (!err){
+		        console.log("用户修改成功");
+        		res.send("ok");
+        	}else{
+        		console.log(err)
+        	}
+	    });
+	});
+}
 
 /*var options = {
 	pfx:fs.readFileSync('./server.pfx'),

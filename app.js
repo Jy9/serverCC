@@ -9,113 +9,354 @@ var http = require("http"),
 
 //设置跨域访问
 app.all('*', function(req, res, next) {
-   res.header("Access-Control-Allow-Origin", "*");
-   res.header("Access-Control-Allow-Headers", "X-Requested-With");
-   res.header("Access-Control-Allow-Methods","PUT,POST,GET,DELETE,OPTIONS");
-   res.header("X-Powered-By",' 3.2.1');
-   res.header("Content-Type", "application/json;charset=utf-8");
-   next();
+	res.header("Access-Control-Allow-Origin", "*");
+	res.header("Access-Control-Allow-Headers", "X-Requested-With");
+	res.header("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS");
+	res.header("X-Powered-By", ' 3.2.1');
+	res.header("Content-Type", "application/json;charset=utf-8");
+	next();
 });
 
-app.use(bodyParser.json({ extended: false }));
-var urlencoded = bodyParser.urlencoded({ extended: false });
+app.use(bodyParser.json({
+	extended: false
+}));
+var urlencoded = bodyParser.urlencoded({
+	extended: false
+});
 
 var url = "mongodb://localhost:27017/CC";
 
-mongoClient.connect(url,function(err,db){
+mongoClient.connect(url, function(err, db) {
 	var dbs = db.db("CC");
 	mongocallback(dbs)
 });
-function mongocallback(dbs){
+
+function mongocallback(dbs) {
 	var users = dbs.collection('user');
-  var article = dbs.collection('article');
+	var article = dbs.collection('article');
 
 	//获取用户信息及创建用户/更新用户
-	app.post('/user', function(req, res){
-		https.get("https://api.weixin.qq.com/sns/jscode2session?appid=wx433c5da9f8727025&secret=16b840a8b6eb1d4cb674934bdf717d52&js_code="+req.body.code+"&grant_type=authorization_code",function(ress){
+	app.post('/user', function(req, res) {
+		https.get("https://api.weixin.qq.com/sns/jscode2session?appid=wx433c5da9f8727025&secret=16b840a8b6eb1d4cb674934bdf717d52&js_code=" + req.body.code + "&grant_type=authorization_code", function(ress) {
 			var datas = {};
-      ress.on('data', function(data){
-          datas=data;
-      })
-      ress.on('end', function(data){
-      	openid = JSON.parse(datas.toString()).openid;
-      	var userfind = users.find({"openid":openid})
-        userfind.toArray(function(err1, user) {
-        	if(user.length == 0){
-          	console.log("没有用户 开始创建");
-          	var peoplenum = 0;
-          	users.find().toArray(function(err2, user1) {
-          		peoplenum = user1.length-0+1;
-          		req.body.userInfo.openid = openid;
-	    				req.body.userInfo.uid = peoplenum;
-	    				req.body.userInfo.utype = 0;
-	    				users.insertOne(req.body.userInfo, function(err3, data) {
-                if(err3){
-                	console.log(err3);
-                }else{
-                	console.log("用户创建成功");
-                	delete req.body.userInfo.openid;
-                	delete req.body.userInfo._id;
-                	res.send(req.body.userInfo)
-                }
-              });
-          	})
-          }else{
-          	user = user[0];
-          	user.name = req.body.userInfo.name;
-          	user.sex = req.body.userInfo.sex;
-          	user.image = req.body.userInfo.image;
-          	user.city = req.body.userInfo.city;
-          	users.updateOne({"openid":openid}, {$set:user}, function(err2, data) {
-				        if (!err2){
-					        console.log("用户更新成功");
-					        delete user.openid;
-					        delete user._id;
-			        		res.send(user);
-			        	}else{
-			        		console.log("err2")
-			        	}
-				    });
-          }
-        });
-      })
-    })
+			ress.on('data', function(data) {
+				datas = data;
+			})
+			ress.on('end', function(data) {
+				openid = JSON.parse(datas.toString()).openid;
+				users.find({
+					"openid": openid
+				}).toArray(function(err1, user) {
+					if(user.length == 0) {
+						console.log("没有用户 开始创建");
+						users.find().toArray(function(err2, user1) {
+							req.body.userInfo.openid = openid;
+							req.body.userInfo.uid = user1.length - 0 + 1;
+							req.body.userInfo.utype = 0;
+							req.body.userInfo.articlelist = [];
+							req.body.userInfo.attent = [];
+							users.insertOne(req.body.userInfo, function(err3, data) {
+								if(err3) {
+									console.log(err3);
+								} else {
+									console.log("用户创建成功");
+									delete req.body.userInfo.openid;
+									delete req.body.userInfo._id;
+									delete req.body.userInfo.articlelist;
+									delete req.body.userInfo.attent;
+									res.send(req.body.userInfo);
+								}
+							});
+						})
+					} else {
+						user = user[0];
+						user.name = req.body.userInfo.name;
+						user.sex = req.body.userInfo.sex;
+						user.image = req.body.userInfo.image;
+						user.city = req.body.userInfo.city;
+						users.updateOne({
+							"openid": openid
+						}, {
+							$set: user
+						}, function(err2, data) {
+							if(!err2) {
+								console.log("用户更新成功");
+								delete user.openid;
+								delete user._id;
+								delete user.articlelist;
+								delete user.attent;
+								res.send(user);
+							} else {
+								console.log(err2)
+							}
+						});
+					}
+				});
+			})
+		})
+	});
+
+	//获取指定uid的user信息
+	app.post("/getuser", function(req, res) {
+		/*
+		 *req.body = {
+		 * 	uid:1,
+		 *  oneself:true,
+		 * }
+		 * */
+		var user = {},
+			articledate = null,
+			articleheart = null,
+			articlenoshow = null,
+			userattent = null;
+		//获取人物信息
+		users.find({
+			"uid": req.body.uid
+		}).toArray(function(err, user) {
+			getlist({"articleid": {$in: user.articlelist}}, "date", false,function(list){articledate = list;});
+			getlist({"articleid": {$in: user.articlelist}}, "heart", false,function(list){articleheart = list;});
+			if(user.utype == 1 && req.body.oneself) {
+				getlist({}, "date", true,function(list){articlenoshow = list;});
+			} else {
+				articlenoshow = "no";
+			}
+			if(req.body.oneself) {
+				user.find({"uid": {$in: user.attent}}).toArray(function(err1, data) {
+					if(!err1) {
+						userattent1 = [];
+						for(let i = 0; i < data.length; i++) {
+							userattent1.push({
+								"uid": data[i].uid,
+								"name": data[i].name,
+								"city": data[i].city,
+								"sex": data[i].sex,
+								"image": data[i].image
+							})
+						}
+						userattent = userattent1;
+					} else {
+						console.log(err1)
+					}
+				})
+			} else {
+				userattent = "no";
+			}
+			delete user.openid;
+			delete user._id;
+			delete user.articlelist;
+			delete user.attent;
+			user = user;
+			var t = setInterval(function() {
+				if(articledate && articleheart && userattent && articlenoshow) {
+					clearInterval(t);
+					var dataObj = {
+						articledate: articledate,
+						articleheart: articleheart
+					}
+					if(user.utype == 1 && req.body.oneself) {
+						dataObj.articlenoshow = articlenoshow;
+					}
+					if(req.body.oneself) {
+						dataObj.userattent = userattent;
+					}
+					res.send(dataObj)
+				}
+			}, 100)
+		})
+	})
+
+	//更改用户introduce
+	app.post("/setintroduce", function(req, res) {
+		users.update({"uid": req.body.uid}, {$set: {"introduce": req.body.introduce}}, function(err, data) {
+			if(!err) {
+				console.log("用户修改成功");
+				res.send("ok");
+			} else {
+				console.log(err)
+			}
+		});
+	});
+
+	//关注/取消关注 用户
+	app.post("/loveuser", function(req, res) {
+		/*
+		 	req.body = {
+		 		uid:1,
+		 		useid:2,
+		 		love:true
+		 	}
+		 * */
+		var setData = {
+			$pull: {
+				"attent": req.body.useid
+			}
+		}
+		if(req.body.love) {
+			setData = {
+				$push: {
+					"attent": req.body.useid
+				}
+			}
+		}
+		users.update({
+			"uid": req.body.uid
+		}, setData, function(err, data) {
+			if(!err) {
+				res.send("ok");
+			} else {
+				console.log(err)
+			}
+		});
+	});
+
+	//举报用户
+	app.post("/reportuser", function(req, res) {
+
+	})
+
+	//保存文章
+	app.post("/postarticle", function(req, res) {
+		var articleObj = req.body;
+		article.find().toArray(function(err, articlelists) {
+			articleObj.articleid = articlelists.length - 0 + 1;
+			users.find({
+				"uid": articleObj.user.uid
+			}).toArray(function(err1, user) {
+				articlelist = user[0].articlelist;
+				articlelist.push(articleObj.articleid);
+				users.updateOne({
+					"uid": articleObj.user.uid
+				}, {
+					$set: {
+						"articlelist": articlelist
+					}
+				}, function(err, data) {
+					if(!err1) {
+						article.insertOne(articleObj, function(err2, data) {
+							if(!err2) {
+								res.send("ok");
+							} else {
+								console.log(err2)
+							}
+						})
+					} else {
+						console.log(err1)
+					}
+				})
+			})
+		})
+	})
+
+	//读取文章列表
+	app.post("/getarticlelist", function(req, res) {
+		getlist({}, "date", true,function(artilcelist){
+			var artilces = [];
+			for(let i=0;i<artilcelist.length;i++){
+				details = null;
+				image = null;
+				for(let j=0;j<artilcelist[i].article.length;j++){
+					if(artilcelist[i].article[j].type == "image" && !image){
+						image = artilcelist[i].article[j].src;
+					}
+					if(artilcelist[i].article[j].type == "text" && !details){
+						details = artilcelist[i].article[j].text;
+					}
+					if(details && image){
+						break ;
+					}
+				}
+				if(!details){
+					details = "此文章没有文字内容"
+				}
+				if(!image){
+					image = "logo.png";
+				}
+				var date = new Date(artilcelist[i].date);
+				var y = date.getFullYear(),
+					m = date.getMonth()-0+1,
+					d = date.getDate();
+				date = y+"/"+m+"/"+d;
+					
+				artilces.push({
+					id:artilcelist[i].articleid,
+					date:date,
+					title:artilcelist[i].title,
+					name:artilcelist[i].user.name,
+					praise:artilcelist[i].heart,
+					details:details,
+					image:image
+				})
+			}
+			res.send(artilces);
+		});
+	})
+	
+	//获取文章详情
+	app.post("/articleinfo",function(req,res){
+		article.find({"articleid":Number(req.body.id)}).toArray(function(err, articles) {
+			articles = articles[0];
+			var date = new Date(articles.date);
+			var y = date.getFullYear(),
+				m = date.getMonth()-0+1,
+				d = date.getDate();
+			articles.date = y+"-"+m+"-"+d;
+			res.send(articles);
+		})
+	})
+
+	//读取文章评论
+	app.post("/getarticlecomment", function(req, res) {
+		/*
+		 *req.body = {
+		 *	articleid:1
+		 *}
+		 * */
+	})
+	
+	//赞赏文章
+	app.post("/heartarticle",function(req,res){
+		
 	});
 	
-	//更改用户introduce
-	app.post("/setintroduce",function(req,res){
-		users.updateOne({"uid":req.body.uid}, {$set:{"introduce":req.body.introduce}}, function(err, data) {
-	        if (!err){
-		        console.log("用户修改成功");
-        		res.send("ok");
-        	}else{
-        		console.log(err)
-        	}
-	    });
-	});
+	//评论文章
+	app.post("/commentarticle",function(req,res){
+		
+	})
+	
+	//文章通过审核
+	app.post("/passarticle",function(req,res){
+		
+	})
 
-  //保存文章
-  app.post("/postarticle",function(req,res){
-    var articleObj = req.body;
-    article.find().toArray(function(err, articlelist) {
-      articleObj.articleid = articlelist.length-0+1;
-      article.insertOne(articleObj,function(err,data){
-        if(!err){
-          res.send("ok");
-        }else{
-          console.log(err)
-        }
-      })
-    })
-
-    //添加图片  (暂不可用)
-    app.post("/addimg",urlencoded,function(req,res){
-      console.log("p");
-      console.log(req.body)
-    })
-    
-  })
+	//添加图片  (暂不可用)
+	app.post("/addimg", urlencoded, function(req, res) {
+		console.log("p");
+		console.log(req.body)
+	})
+	
+	
+	function getlist(getObj, sort, isshow,success) {
+		var mysort = {};
+		if(sort == "date") {
+			mysort = {
+				"date": 1
+			}
+		} else if(sort == "heart") {
+			mysort = {
+				"heart": 1
+			}
+		}
+		if(isshow) {
+			getObj.isshow = 0;
+		} else {
+			getObj.isshow = 1;
+		}
+		article.find(getObj).sort(mysort).toArray(function(err, articlelist) {
+			success(articlelist);
+		})
+	}
 }
+
 
 
 /*var options = {
@@ -126,6 +367,6 @@ function mongocallback(dbs){
 var httpsServer = https.createServer(options, app).listen(3000,function(){
 	console.log("3000端口已启动！")
 });*/
-app.listen(3000, function () {
-	  console.log("3000端口启动成功")
+app.listen(3000, function() {
+	console.log("3000端口启动成功")
 })

@@ -5,7 +5,10 @@ var http = require("http"),
 	fs = require('fs'),
 	bodyParser = require('body-parser'),
 	async = require('async'),
-	mongoClient = require('mongodb').MongoClient;
+	mongoClient = require('mongodb').MongoClient,
+	multer = require("multer"),
+	multipart = require('connect-multiparty'),
+	formidable = require('formidable');
 
 //设置跨域访问
 app.all('*', function(req, res, next) {
@@ -20,9 +23,6 @@ app.all('*', function(req, res, next) {
 app.use(bodyParser.json({
 	extended: false
 }));
-var urlencoded = bodyParser.urlencoded({
-	extended: false
-});
 
 var url = "mongodb://localhost:27017/CC";
 
@@ -100,28 +100,31 @@ function mongocallback(dbs) {
 	app.post("/getuser", function(req, res) {
 		/*
 		 *req.body = {
-		 * 	uid:1,
-		 *  oneself:true,
+		 * 	uid:1, 自己id
+		 *  useid:1, 查找的id
 		 * }
 		 * */
-		var user = {},
+		var userinfo = {},
 			articledate = null,
 			articleheart = null,
 			articlenoshow = null,
-			userattent = null;
+			userattent = null,
+			isattent = false;
 		//获取人物信息
 		users.find({
-			"uid": req.body.uid
+			"uid": req.body.useid
 		}).toArray(function(err, user) {
+			user = user[0];
+			userinfo = user;
 			getlist({"articleid": {$in: user.articlelist}}, "date", false,function(list){articledate = list;});
 			getlist({"articleid": {$in: user.articlelist}}, "heart", false,function(list){articleheart = list;});
-			if(user.utype == 1 && req.body.oneself) {
-				getlist({}, "date", true,function(list){articlenoshow = list;});
-			} else {
-				articlenoshow = "no";
-			}
-			if(req.body.oneself) {
-				user.find({"uid": {$in: user.attent}}).toArray(function(err1, data) {
+			if(req.body.uid == req.body.useid) {
+				if(user.utype == 1){
+					getlist({}, "date", true,function(list){articlenoshow = list;});
+				} else {
+					articlenoshow = "no";
+				}
+				users.find({"uid": {$in: user.attent}}).toArray(function(err1, data) {
 					if(!err1) {
 						userattent1 = [];
 						for(let i = 0; i < data.length; i++) {
@@ -141,28 +144,46 @@ function mongocallback(dbs) {
 			} else {
 				userattent = "no";
 			}
-			delete user.openid;
-			delete user._id;
-			delete user.articlelist;
-			delete user.attent;
-			user = user;
-			var t = setInterval(function() {
-				if(articledate && articleheart && userattent && articlenoshow) {
-					clearInterval(t);
-					var dataObj = {
-						articledate: articledate,
-						articleheart: articleheart
+		})
+		
+		if(req.body.uid == req.body.useid){
+			isattent = true;
+		}else{
+			users.find({
+				"uid": req.body.uid
+			}).toArray(function(err, user) {
+				for(let i=0;i<user[0].attent.length;i++){
+					if(user[0].attent[i] == useid){
+						isattent = true;
+						break ;
 					}
-					if(user.utype == 1 && req.body.oneself) {
+				}
+			})
+		}	
+			
+		var t = setInterval(function() {
+			if(isattent && articledate && articleheart && userattent && articlenoshow) {
+				clearInterval(t);
+				delete userinfo.openid;
+				delete userinfo._id;
+				delete userinfo.articlelist;
+				delete userinfo.attent;
+				userinfo.isattent = isattent;
+				var dataObj = {
+					userinfo:userinfo,
+					articledate: articledate,
+					articleheart: articleheart
+				}
+				if(req.body.uid == req.body.useid) {
+					dataObj.userattent = userattent;
+					if(userinfo.utype == 1){
 						dataObj.articlenoshow = articlenoshow;
 					}
-					if(req.body.oneself) {
-						dataObj.userattent = userattent;
-					}
-					res.send(dataObj)
 				}
-			}, 100)
-		})
+				res.send(dataObj)
+			}
+		}, 100)
+		
 	})
 
 	//更改用户introduce
@@ -329,9 +350,8 @@ function mongocallback(dbs) {
 	})
 
 	//添加图片  (暂不可用)
-	app.post("/addimg", urlencoded, function(req, res) {
-		console.log("p");
-		console.log(req.body)
+	app.post('/image',function(req,res){
+	    
 	})
 	
 	

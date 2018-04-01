@@ -305,7 +305,13 @@ function mongocallback(dbs) {
 	
 	//文章通过审核
 	app.post("/passarticle",function(req,res){
-		
+		article.update({"articleid": req.body.id}, {$set:{"isshow":1}}, function(err, data) {
+      if(!err) {
+        res.send("ok");
+      } else {
+        console.log(err)
+      }
+    });
 	})
 
   //拒绝文章

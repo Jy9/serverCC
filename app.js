@@ -3,12 +3,10 @@ var http = require("http"),
 	express = require('express'),
 	app = express(),
 	fs = require('fs'),
+  path = require('path'),
 	bodyParser = require('body-parser'),
-	async = require('async'),
 	mongoClient = require('mongodb').MongoClient,
-	multer = require("multer"),
-	multipart = require('connect-multiparty'),
-	formidable = require('formidable');
+	multer = require("multer");
 
 //设置跨域访问
 app.all('*', function(req, res, next) {
@@ -19,6 +17,8 @@ app.all('*', function(req, res, next) {
 	res.header("Content-Type", "application/json;charset=utf-8");
 	next();
 });
+
+app.use(express.static(path.join(__dirname,"public")));
 
 app.use(bodyParser.json({
 	extended: false
@@ -122,7 +122,7 @@ function mongocallback(dbs) {
 				if(user.utype == 1){
 					getlist({}, "date", true,function(list){articlenoshow = list;});
 				} else {
-					articlenoshow = "no";
+					articlenoshow = [];
 				}
 				users.find({"uid": {$in: user.attent}}).toArray(function(err1, data) {
 					if(!err1) {
@@ -142,7 +142,7 @@ function mongocallback(dbs) {
 					}
 				})
 			} else {
-				userattent = "no";
+				userattent = [];
 			}
 		})
 		
@@ -172,13 +172,9 @@ function mongocallback(dbs) {
 				var dataObj = {
 					userinfo:userinfo,
 					articledate: articledate,
-					articleheart: articleheart
-				}
-				if(req.body.uid == req.body.useid) {
-					dataObj.userattent = userattent;
-					if(userinfo.utype == 1){
-						dataObj.articlenoshow = articlenoshow;
-					}
+					articleheart: articleheart,
+          articlenoshow: articlenoshow,
+          userattent: userattent
 				}
 				res.send(dataObj)
 			}
@@ -270,45 +266,8 @@ function mongocallback(dbs) {
 
 	//读取文章列表
 	app.post("/getarticlelist", function(req, res) {
-		getlist({}, "date", true,function(artilcelist){
-			var artilces = [];
-			for(let i=0;i<artilcelist.length;i++){
-				details = null;
-				image = null;
-				for(let j=0;j<artilcelist[i].article.length;j++){
-					if(artilcelist[i].article[j].type == "image" && !image){
-						image = artilcelist[i].article[j].src;
-					}
-					if(artilcelist[i].article[j].type == "text" && !details){
-						details = artilcelist[i].article[j].text;
-					}
-					if(details && image){
-						break ;
-					}
-				}
-				if(!details){
-					details = "此文章没有文字内容"
-				}
-				if(!image){
-					image = "logo.png";
-				}
-				var date = new Date(artilcelist[i].date);
-				var y = date.getFullYear(),
-					m = date.getMonth()-0+1,
-					d = date.getDate();
-				date = y+"/"+m+"/"+d;
-					
-				artilces.push({
-					id:artilcelist[i].articleid,
-					date:date,
-					title:artilcelist[i].title,
-					name:artilcelist[i].user.name,
-					praise:artilcelist[i].heart,
-					details:details,
-					image:image
-				})
-			}
-			res.send(artilces);
+		getlist({}, "date", false,function(artilcelist){
+			res.send(artilcelist);
 		});
 	})
 	
@@ -349,9 +308,24 @@ function mongocallback(dbs) {
 		
 	})
 
-	//添加图片  (暂不可用)
-	app.post('/image',function(req,res){
-	    
+  //拒绝文章
+  app.post("/nopassarticle",function(req,res){
+
+  })
+
+	//上传图片
+  var storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+      cb(null, './public/image');
+    },
+    filename: function (req, file, cb) {
+        var fileFormat = (file.originalname).split(".");
+        cb(null, Date.now() + "." + fileFormat[fileFormat.length - 1]);
+    }
+  })
+  var upload = multer({storage:storage});
+	app.post('/upload/image',upload.single('image'),function(req,res){
+      res.send("http://localhost:3000/image/"+req.file.filename);
 	})
 	
 	
@@ -372,7 +346,44 @@ function mongocallback(dbs) {
 			getObj.isshow = 1;
 		}
 		article.find(getObj).sort(mysort).toArray(function(err, articlelist) {
-			success(articlelist);
+      var articles = [];
+      for(let i=0;i<articlelist.length;i++){
+        details = null;
+        image = null;
+        for(let j=0;j<articlelist[i].article.length;j++){
+          if(articlelist[i].article[j].type == "image" && !image){
+            image = articlelist[i].article[j].src;
+          }
+          if(articlelist[i].article[j].type == "text" && !details){
+            details = articlelist[i].article[j].text;
+          }
+          if(details && image){
+            break ;
+          }
+        }
+        if(!details){
+          details = "此文章没有文字内容"
+        }
+        if(!image){
+          image = "logo.png";
+        }
+        var date = new Date(articlelist[i].date);
+        var y = date.getFullYear(),
+          m = date.getMonth()-0+1,
+          d = date.getDate();
+        date = y+"/"+m+"/"+d;
+          
+        articles.push({
+          id:articlelist[i].articleid,
+          date:date,
+          title:articlelist[i].title,
+          name:articlelist[i].user.name,
+          praise:articlelist[i].heart,
+          details:details,
+          image:image
+        })
+      }
+      success(articles);
 		})
 	}
 }

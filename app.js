@@ -3,10 +3,12 @@ var http = require("http"),
 	express = require('express'),
 	app = express(),
 	fs = require('fs'),
-  path = require('path'),
+	path = require('path'),
 	bodyParser = require('body-parser'),
 	mongoClient = require('mongodb').MongoClient,
 	multer = require("multer");
+
+var URL = "http://localhost:3000/";
 
 //设置跨域访问
 app.all('*', function(req, res, next) {
@@ -14,11 +16,10 @@ app.all('*', function(req, res, next) {
 	res.header("Access-Control-Allow-Headers", "X-Requested-With");
 	res.header("Access-Control-Allow-Methods", "PUT,POST,GET,DELETE,OPTIONS");
 	res.header("X-Powered-By", ' 3.2.1');
-	res.header("Content-Type", "application/json;charset=utf-8");
 	next();
 });
 
-app.use(express.static(path.join(__dirname,"public")));
+app.use(express.static(path.join(__dirname, "public")));
 
 app.use(bodyParser.json({
 	extended: false
@@ -34,6 +35,18 @@ mongoClient.connect(url, function(err, db) {
 function mongocallback(dbs) {
 	var users = dbs.collection('user');
 	var article = dbs.collection('article');
+	var discuss = dbs.collection('discuss');
+
+	//获取平台注册人数
+	app.post("/userlength", function(req, res) {
+		users.find().toArray(function(err, user) {
+			if(!err) {
+				res.send(user.length + "");
+			} else {
+				console.log(err);
+			}
+		})
+	})
 
 	//获取用户信息及创建用户/更新用户
 	app.post('/user', function(req, res) {
@@ -116,15 +129,33 @@ function mongocallback(dbs) {
 		}).toArray(function(err, user) {
 			user = user[0];
 			userinfo = user;
-			getlist({"articleid": {$in: user.articlelist}}, "date", false,function(list){articledate = list;});
-			getlist({"articleid": {$in: user.articlelist}}, "heart", false,function(list){articleheart = list;});
+			getlist({
+				"articleid": {
+					$in: user.articlelist
+				}
+			}, "date", false, function(list) {
+				articledate = list;
+			});
+			getlist({
+				"articleid": {
+					$in: user.articlelist
+				}
+			}, "heart", false, function(list) {
+				articleheart = list;
+			});
 			if(req.body.uid == req.body.useid) {
-				if(user.utype == 1){
-					getlist({}, "date", true,function(list){articlenoshow = list;});
+				if(user.utype == 1) {
+					getlist({}, "date", true, function(list) {
+						articlenoshow = list;
+					});
 				} else {
 					articlenoshow = [];
 				}
-				users.find({"uid": {$in: user.attent}}).toArray(function(err1, data) {
+				users.find({
+					"uid": {
+						$in: user.attent
+					}
+				}).toArray(function(err1, data) {
 					if(!err1) {
 						userattent1 = [];
 						for(let i = 0; i < data.length; i++) {
@@ -145,22 +176,22 @@ function mongocallback(dbs) {
 				userattent = [];
 			}
 		})
-		
-		if(req.body.uid == req.body.useid){
+
+		if(req.body.uid == req.body.useid) {
 			isattent = true;
-		}else{
+		} else {
 			users.find({
 				"uid": req.body.uid
 			}).toArray(function(err, user) {
-				for(let i=0;i<user[0].attent.length;i++){
-					if(user[0].attent[i] == useid){
+				for(let i = 0; i < user[0].attent.length; i++) {
+					if(user[0].attent[i] == useid) {
 						isattent = true;
-						break ;
+						break;
 					}
 				}
 			})
-		}	
-			
+		}
+
 		var t = setInterval(function() {
 			if(isattent && articledate && articleheart && userattent && articlenoshow) {
 				clearInterval(t);
@@ -170,21 +201,27 @@ function mongocallback(dbs) {
 				delete userinfo.attent;
 				userinfo.isattent = isattent;
 				var dataObj = {
-					userinfo:userinfo,
+					userinfo: userinfo,
 					articledate: articledate,
 					articleheart: articleheart,
-          articlenoshow: articlenoshow,
-          userattent: userattent
+					articlenoshow: articlenoshow,
+					userattent: userattent
 				}
 				res.send(dataObj)
 			}
 		}, 100)
-		
+
 	})
 
 	//更改用户introduce
 	app.post("/setintroduce", function(req, res) {
-		users.update({"uid": req.body.uid}, {$set: {"introduce": req.body.introduce}}, function(err, data) {
+		users.update({
+			"uid": req.body.uid
+		}, {
+			$set: {
+				"introduce": req.body.introduce
+			}
+		}, function(err, data) {
 			if(!err) {
 				console.log("用户修改成功");
 				res.send("ok");
@@ -236,6 +273,7 @@ function mongocallback(dbs) {
 		var articleObj = req.body;
 		article.find().toArray(function(err, articlelists) {
 			articleObj.articleid = articlelists.length - 0 + 1;
+			articleObj.attent = [];
 			users.find({
 				"uid": articleObj.user.uid
 			}).toArray(function(err1, user) {
@@ -266,20 +304,40 @@ function mongocallback(dbs) {
 
 	//读取文章列表
 	app.post("/getarticlelist", function(req, res) {
-		getlist({}, "date", false,function(artilcelist){
+		getlist({}, "date", false, function(artilcelist) {
 			res.send(artilcelist);
 		});
 	})
-	
+
+	//按专题查找文章
+	app.post("/getarticlelistlabel", function(req, res) {
+		getlist({
+			"label": req.body.label
+		}, "date", false, function(artilcelist) {
+			res.send(artilcelist);
+		});
+	})
+
 	//获取文章详情
-	app.post("/articleinfo",function(req,res){
-		article.find({"articleid":Number(req.body.id)}).toArray(function(err, articles) {
+	app.post("/articleinfo", function(req, res) {
+		article.find({
+			"articleid": Number(req.body.id)
+		}).toArray(function(err, articles) {
 			articles = articles[0];
 			var date = new Date(articles.date);
 			var y = date.getFullYear(),
-				m = date.getMonth()-0+1,
+				m = date.getMonth() - 0 + 1,
 				d = date.getDate();
-			articles.date = y+"-"+m+"-"+d;
+			articles.date = y + "-" + m + "-" + d;
+			articles.love = false;
+			var heart = articles.attent.length;
+			for(let i = 0; i < heart; i++) {
+				if(articles.attent[i] == req.body.uid) {
+					articles.love = true;
+					break;
+				}
+			}
+			articles.heart = heart;
 			res.send(articles);
 		})
 	})
@@ -291,55 +349,141 @@ function mongocallback(dbs) {
 		 *	articleid:1
 		 *}
 		 * */
+		discuss.find({"articleid":articleid},function(err,data){
+			if(!err){
+				var data = data[0];
+				var date = new Date(data.date),
+					y = date.getFullYear(),
+					m = date.getMonth() - 0 + 1,
+					d = date.getDate(),
+					discussdate = y+"/"+m+"/"+d;
+				
+				user.find({"uid":data.uid}).toArray(function(err1,user){
+					var info = {
+			            uid:data.uid,
+			            discussid:data.id,
+			            name:user[0].name,
+			            image:user[0].image,
+			            date:discussdate,
+			            str:data.str,
+			            good:data.good,
+			            rubbish:data.rubbish
+			        }
+					console.log(info);
+					res.send(info)
+				})
+			}else{
+				console.log(err)
+			}
+		})
 	})
-	
-	//赞赏文章
-	app.post("/heartarticle",function(req,res){
-		
+
+	//赞赏/取消赞赏 文章
+	app.post("/heartarticle", function(req, res) {
+		/*
+		 req.body = {
+		 	uid:1,
+		 	articleid:1,
+		 	love:true
+		 }
+		 * */
+		console.log(req.body)
+		var attent = {
+			$pull: {
+				"attent": req.body.uid
+			}
+		}
+		if(req.body.love) {
+			attent = {
+				$push: {
+					"attent": req.body.uid
+				}
+			}
+		}
+		article.update({
+			"articleid": req.body.articleid
+		}, attent, function(err, data) {
+			if(!err) {
+				res.send("ok")
+			} else {
+				console.log(err)
+			}
+		})
 	});
-	
+
 	//评论文章
-	app.post("/commentarticle",function(req,res){
-		
+	app.post("/commentarticle", function(req, res) {
+		/*
+		 *req.body = {
+		 *	articleid:1,
+		 *  uid:1,
+		 *  str:"asd",
+		 * date:date
+		 *}
+		 * */
+		var info = req.body;
+		discuss.find({}).toArray(function(err,discusss){
+			if(!err){
+				info.id = discusss.length-0+1;
+				info.good = 0;
+				info.rubbish = 0;
+				discuss.insertOne(info, function(err1, data) {
+					if(!err1){
+						res.send(info)
+					}else{
+						console.log(err1)
+					}
+				})
+			}else{
+				console.log(err)
+			}
+		})
 	})
-	
+
 	//文章通过审核
-	app.post("/passarticle",function(req,res){
-		article.update({"articleid": req.body.id}, {$set:{"isshow":1}}, function(err, data) {
-      if(!err) {
-        res.send("ok");
-      } else {
-        console.log(err)
-      }
-    });
+	app.post("/passarticle", function(req, res) {
+		article.update({
+			"articleid": req.body.id
+		}, {
+			$set: {
+				"isshow": 1
+			}
+		}, function(err, data) {
+			if(!err) {
+				res.send("ok");
+			} else {
+				console.log(err)
+			}
+		});
 	})
 
-  //拒绝文章
-  app.post("/nopassarticle",function(req,res){
+	//拒绝文章
+	app.post("/nopassarticle", function(req, res) {
 
-  })
+	})
 
 	//上传图片
-  var storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-      cb(null, './public/image');
-    },
-    filename: function (req, file, cb) {
-        var fileFormat = (file.originalname).split(".");
-        cb(null, Date.now() + "." + fileFormat[fileFormat.length - 1]);
-    }
-  })
-  var upload = multer({storage:storage});
-	app.post('/upload/image',upload.single('image'),function(req,res){
-      res.send("http://localhost:3000/image/"+req.file.filename);
+	var storage = multer.diskStorage({
+		destination: function(req, file, cb) {
+			cb(null, './public/image');
+		},
+		filename: function(req, file, cb) {
+			var fileFormat = (file.originalname).split(".");
+			cb(null, Date.now() + "." + fileFormat[fileFormat.length - 1]);
+		}
 	})
-	
-	
-	function getlist(getObj, sort, isshow,success) {
+	var upload = multer({
+		storage: storage
+	});
+	app.post('/upload/image', upload.single('image'), function(req, res) {
+		res.send("http://localhost:3000/image/" + req.file.filename);
+	})
+
+	function getlist(getObj, sort, isshow, success) {
 		var mysort = {};
 		if(sort == "date") {
 			mysort = {
-				"date": 1
+				"date": -1
 			}
 		} else if(sort == "heart") {
 			mysort = {
@@ -352,49 +496,47 @@ function mongocallback(dbs) {
 			getObj.isshow = 1;
 		}
 		article.find(getObj).sort(mysort).toArray(function(err, articlelist) {
-      var articles = [];
-      for(let i=0;i<articlelist.length;i++){
-        details = null;
-        image = null;
-        for(let j=0;j<articlelist[i].article.length;j++){
-          if(articlelist[i].article[j].type == "image" && !image){
-            image = articlelist[i].article[j].src;
-          }
-          if(articlelist[i].article[j].type == "text" && !details){
-            details = articlelist[i].article[j].text;
-          }
-          if(details && image){
-            break ;
-          }
-        }
-        if(!details){
-          details = "此文章没有文字内容"
-        }
-        if(!image){
-          image = "logo.png";
-        }
-        var date = new Date(articlelist[i].date);
-        var y = date.getFullYear(),
-          m = date.getMonth()-0+1,
-          d = date.getDate();
-        date = y+"/"+m+"/"+d;
-          
-        articles.push({
-          id:articlelist[i].articleid,
-          date:date,
-          title:articlelist[i].title,
-          name:articlelist[i].user.name,
-          praise:articlelist[i].heart,
-          details:details,
-          image:image
-        })
-      }
-      success(articles);
+			var articles = [];
+			for(let i = 0; i < articlelist.length; i++) {
+				details = null;
+				image = null;
+				for(let j = 0; j < articlelist[i].article.length; j++) {
+					if(articlelist[i].article[j].type == "image" && !image) {
+						image = articlelist[i].article[j].src;
+					}
+					if(articlelist[i].article[j].type == "text" && !details) {
+						details = articlelist[i].article[j].text;
+					}
+					if(details && image) {
+						break;
+					}
+				}
+				if(!details) {
+					details = "此文章没有文字内容"
+				}
+				if(!image) {
+					image = URL + "icon/logo.png";
+				}
+				var date = new Date(articlelist[i].date);
+				var y = date.getFullYear(),
+					m = date.getMonth() - 0 + 1,
+					d = date.getDate();
+				date = y + "/" + m + "/" + d;
+
+				articles.push({
+					id: articlelist[i].articleid,
+					date: date,
+					title: articlelist[i].title,
+					name: articlelist[i].user.name,
+					praise: articlelist[i].heart,
+					details: details,
+					image: image
+				})
+			}
+			success(articles);
 		})
 	}
 }
-
-
 
 /*var options = {
 	pfx:fs.readFileSync('./server.pfx'),

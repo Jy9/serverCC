@@ -122,7 +122,7 @@ function mongocallback(dbs) {
 			articleheart = null,
 			articlenoshow = null,
 			userattent = null,
-			isattent = false;
+			isattent = null;
 		//获取人物信息
 		users.find({
 			"uid": req.body.useid
@@ -174,11 +174,14 @@ function mongocallback(dbs) {
 				})
 			} else {
 				userattent = [];
+        articlenoshow = [];
 			}
 		})
 
+    var isattentlook = false;
 		if(req.body.uid == req.body.useid) {
 			isattent = true;
+      isattentlook = true;
 		} else {
 			users.find({
 				"uid": req.body.uid
@@ -189,12 +192,15 @@ function mongocallback(dbs) {
 						break;
 					}
 				}
+        isattentlook = true
 			})
 		}
 
 		var t = setInterval(function() {
-			if(isattent && articledate && articleheart && userattent && articlenoshow) {
+      console.log("p")
+			if(isattentlook && articledate && articleheart && userattent && articlenoshow) {
 				clearInterval(t);
+        console.log("o")
 				delete userinfo.openid;
 				delete userinfo._id;
 				delete userinfo.articlelist;
@@ -346,32 +352,60 @@ function mongocallback(dbs) {
 	app.post("/getarticlecomment", function(req, res) {
 		/*
 		 *req.body = {
-		 *	articleid:1
+		 *	articleid:1,
+     *  uid:1
 		 *}
 		 * */
-		discuss.find({"articleid":articleid},function(err,data){
+		discuss.find({"articleid":Number(req.body.articleid)}).toArray(function(err,datas){
 			if(!err){
-				var data = data[0];
-				var date = new Date(data.date),
-					y = date.getFullYear(),
-					m = date.getMonth() - 0 + 1,
-					d = date.getDate(),
-					discussdate = y+"/"+m+"/"+d;
-				
-				users.find({"uid":data.uid}).toArray(function(err1,user){
-					var info = {
-			            uid:data.uid,
-			            discussid:data.id,
-			            name:user[0].name,
-			            image:user[0].image,
-			            date:discussdate,
-			            str:data.str,
-			            good:data.good,
-			            rubbish:data.rubbish
-			        }
-					console.log(info);
-					res.send(info)
-				})
+        var info = [];
+        var fornum = 0;
+        //for(let i=0;i<datas.length;i++){
+        function getdata(){
+          var data = datas[fornum];
+  				var date = new Date(data.date),
+  					y = date.getFullYear(),
+  					m = date.getMonth() - 0 + 1,
+  					d = date.getDate(),
+  					discussdate = y+"/"+m+"/"+d;
+  				
+  				users.find({"uid":data.uid}).toArray(function(err1,user){
+            var isgood = isrubbish = false;
+            for(let i=0;i<data.good.length;i++){
+              if(data.good[i] == req.body.uid){
+                isgood = true;
+                break ;
+              }
+            }
+            for(let i=0;i<data.rubbish.length;i++){
+              if(data.rubbish[i] == req.body.uid){
+                isrubbish = true;
+                break ;
+              }
+            }
+  					info.push({
+		            uid:data.uid,
+		            discussid:data.id,
+		            name:user[0].name,
+		            image:user[0].image,
+		            date:discussdate,
+		            str:data.str,
+		            good:data.good.length,
+		            rubbish:data.rubbish.length,
+                isrubbish:isrubbish,
+                isgood:isgood
+		        })
+            fornum += 1;
+            if(fornum >= datas.length){
+              res.send(info);
+            }else{
+              getdata();
+            }
+  				})
+        }
+        if(datas.length != 0){
+          getdata();
+        }
 			}else{
 				console.log(err)
 			}
@@ -432,8 +466,8 @@ function mongocallback(dbs) {
 				discuss.find({}).toArray(function(err1,discusss){
 					if(!err1){
 						info.id = discusss.length-0+1;
-						info.good = 0;
-						info.rubbish = 0;
+						info.good = [];
+						info.rubbish = [];
 						discuss.insertOne(info, function(err2, data) {
 							if(!err2){
 								info.image = user[0].image;
@@ -453,6 +487,52 @@ function mongocallback(dbs) {
 			}
 		})
 	})
+
+  //给评论好评 / 取消好评
+  app.post("/discussgood",function(req,res){
+    /*
+    req.body = {
+      uid:1,
+      id:1,
+      isgood:true
+    }
+     */
+    console.log(req.body)
+    var set = {$pull:{"good":req.body.uid}};
+    if(req.body.isgood){
+     set = {$push:{"good":req.body.uid}}
+    }
+    console.log(set)
+    discuss.update({"id":Number(req.body.id)},set,function(err,data){
+      if(!err){
+        res.send("ok");
+      }else{
+        console.log(err);
+      }
+    })
+  })
+  
+  //给评论差评 / 取消差评
+  app.post("/discussrubbish",function(req,res){
+    /*
+    req.body = {
+      uid:1,
+      id:1,
+      isrubbish:true
+    }
+     */
+    var set = {$pull:{"rubbish":req.body.uid}};
+    if(req.body.isrubbish){
+     set = {$push:{"rubbish":req.body.uid}}
+    }
+    discuss.update({"id":Number(req.body.id)},set,function(err,data){
+      if(!err){
+        res.send("ok");
+      }else{
+        console.log(err);
+      }
+    })
+  })
 
 	//文章通过审核
 	app.post("/passarticle", function(req, res) {
@@ -542,7 +622,7 @@ function mongocallback(dbs) {
 					date: date,
 					title: articlelist[i].title,
 					name: articlelist[i].user.name,
-					praise: articlelist[i].heart,
+					praise: articlelist[i].attent.length,
 					details: details,
 					image: image
 				})

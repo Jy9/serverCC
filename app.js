@@ -358,7 +358,7 @@ function mongocallback(dbs) {
 					d = date.getDate(),
 					discussdate = y+"/"+m+"/"+d;
 				
-				user.find({"uid":data.uid}).toArray(function(err1,user){
+				users.find({"uid":data.uid}).toArray(function(err1,user){
 					var info = {
 			            uid:data.uid,
 			            discussid:data.id,
@@ -422,20 +422,34 @@ function mongocallback(dbs) {
 		 *}
 		 * */
 		var info = req.body;
-		discuss.find({}).toArray(function(err,discusss){
+		var date = new Date(info.date),
+			y = date.getFullYear(),
+			m = date.getMonth() - 0 + 1,
+			d = date.getDate();
+			discussdate = y+"/"+m+"/"+d;
+		users.find({}).toArray(function(err,user){
 			if(!err){
-				info.id = discusss.length-0+1;
-				info.good = 0;
-				info.rubbish = 0;
-				discuss.insertOne(info, function(err1, data) {
+				discuss.find({}).toArray(function(err1,discusss){
 					if(!err1){
-						res.send(info)
+						info.id = discusss.length-0+1;
+						info.good = 0;
+						info.rubbish = 0;
+						discuss.insertOne(info, function(err2, data) {
+							if(!err2){
+								info.image = user[0].image;
+								info.name = user[0].name;
+								info.date = discussdate;
+								res.send(info)
+							}else{
+								console.log(err2)
+							}
+						})
 					}else{
 						console.log(err1)
 					}
 				})
 			}else{
-				console.log(err)
+				console.log(err);
 			}
 		})
 	})

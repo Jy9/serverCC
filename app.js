@@ -656,7 +656,7 @@ function mongocallback(dbs) {
 		storage: storage
 	});
 	app.post('/upload/image', upload.single('image'), function(req, res) {
-		res.send("http://localhost:3000/image/" + req.file.filename);
+		res.send("http://20b1223h28.51mypc.cn/image/" + req.file.filename);
 	})
 
 	function getlist(getObj, sort, isshow, success) {

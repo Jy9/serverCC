@@ -36,6 +36,7 @@ function mongocallback(dbs) {
 	var users = dbs.collection('user');
 	var article = dbs.collection('article');
 	var discuss = dbs.collection('discuss');
+	var report = dbs.collection('report');
 
 	//获取平台注册人数
 	app.post("/userlength", function(req, res) {
@@ -144,13 +145,9 @@ function mongocallback(dbs) {
 				articleheart = list;
 			});
 			if(req.body.uid == req.body.useid) {
-				if(user.utype == 1) {
-					getlist({}, "date", true, function(list) {
-						articlenoshow = list;
-					});
-				} else {
-					articlenoshow = [];
-				}
+				getlist({"isshow":0,"articleid": {$in: user.articlelist}}, "date", true, function(list) {
+					articlenoshow = list;
+				});
 				users.find({
 					"uid": {
 						$in: user.attent
@@ -174,14 +171,14 @@ function mongocallback(dbs) {
 				})
 			} else {
 				userattent = [];
-        articlenoshow = [];
+				articlenoshow = [];
 			}
 		})
 
-    var isattentlook = false;
+		var isattentlook = false;
 		if(req.body.uid == req.body.useid) {
 			isattent = true;
-      isattentlook = true;
+			isattentlook = true;
 		} else {
 			users.find({
 				"uid": req.body.uid
@@ -192,15 +189,13 @@ function mongocallback(dbs) {
 						break;
 					}
 				}
-        isattentlook = true
+				isattentlook = true
 			})
 		}
 
 		var t = setInterval(function() {
-      console.log("p")
 			if(isattentlook && articledate && articleheart && userattent && articlenoshow) {
 				clearInterval(t);
-        console.log("o")
 				delete userinfo.openid;
 				delete userinfo._id;
 				delete userinfo.articlelist;
@@ -271,15 +266,50 @@ function mongocallback(dbs) {
 
 	//举报用户
 	app.post("/reportuser", function(req, res) {
-
+		/*
+		 req.body = {
+		 	uid:1, //举报的人
+		 	useid:1,//被举报的人
+		 	text:""
+		 }
+		 * */
+		report.find({}).toArray(function(err,datas){
+			if(!err){
+				req.body.id = datas.length-0+1;
+				report.insertOne(req.body, function(err1, data) {
+					if(!err1) {
+						res.send("ok");
+					} else {
+						console.log(err1)
+					}
+				});
+			}else{
+				console.log(err)
+			}
+		})
 	})
 
 	//保存文章
 	app.post("/postarticle", function(req, res) {
 		var articleObj = req.body;
-		article.find().toArray(function(err, articlelists) {
-			articleObj.articleid = articlelists.length - 0 + 1;
+		if(req.body.articleid){
+			article.remove({"articleid":Number(req.body.articleid)},function(err,result){
+            	if(!err){
+					postarticle(req.body.articleid);
+            	}else{
+            		console.log(err);
+            	}
+            });
+		}else{
+			article.find().toArray(function(err, articlelists) {
+				var id = articlelists.length - 0 + 1;
+				postarticle(id);
+			})
+		}
+		function postarticle(articleid){
+			articleObj.articleid = articleid
 			articleObj.attent = [];
+			articleObj.str = "";
 			users.find({
 				"uid": articleObj.user.uid
 			}).toArray(function(err1, user) {
@@ -305,13 +335,20 @@ function mongocallback(dbs) {
 					}
 				})
 			})
-		})
+		}
 	})
 
 	//读取文章列表
 	app.post("/getarticlelist", function(req, res) {
 		getlist({}, "date", false, function(artilcelist) {
 			res.send(artilcelist);
+		});
+	})
+
+	//读取未审核文章列表
+	app.post("/getarticlelistisshow", function(req, res) {
+		getlist({"str":"","istrue":true}, "date", true, function(list) {
+			res.send(list);
 		});
 	})
 
@@ -353,60 +390,64 @@ function mongocallback(dbs) {
 		/*
 		 *req.body = {
 		 *	articleid:1,
-     *  uid:1
+		 *  uid:1
 		 *}
 		 * */
-		discuss.find({"articleid":Number(req.body.articleid)}).toArray(function(err,datas){
-			if(!err){
-        var info = [];
-        var fornum = 0;
-        //for(let i=0;i<datas.length;i++){
-        function getdata(){
-          var data = datas[fornum];
-  				var date = new Date(data.date),
-  					y = date.getFullYear(),
-  					m = date.getMonth() - 0 + 1,
-  					d = date.getDate(),
-  					discussdate = y+"/"+m+"/"+d;
-  				
-  				users.find({"uid":data.uid}).toArray(function(err1,user){
-            var isgood = isrubbish = false;
-            for(let i=0;i<data.good.length;i++){
-              if(data.good[i] == req.body.uid){
-                isgood = true;
-                break ;
-              }
-            }
-            for(let i=0;i<data.rubbish.length;i++){
-              if(data.rubbish[i] == req.body.uid){
-                isrubbish = true;
-                break ;
-              }
-            }
-  					info.push({
-		            uid:data.uid,
-		            discussid:data.id,
-		            name:user[0].name,
-		            image:user[0].image,
-		            date:discussdate,
-		            str:data.str,
-		            good:data.good.length,
-		            rubbish:data.rubbish.length,
-                isrubbish:isrubbish,
-                isgood:isgood
-		        })
-            fornum += 1;
-            if(fornum >= datas.length){
-              res.send(info);
-            }else{
-              getdata();
-            }
-  				})
-        }
-        if(datas.length != 0){
-          getdata();
-        }
-			}else{
+		discuss.find({
+			"articleid": Number(req.body.articleid)
+		}).toArray(function(err, datas) {
+			if(!err) {
+				var info = [];
+				var fornum = 0;
+				//for(let i=0;i<datas.length;i++){
+				function getdata() {
+					var data = datas[fornum];
+					var date = new Date(data.date),
+						y = date.getFullYear(),
+						m = date.getMonth() - 0 + 1,
+						d = date.getDate(),
+						discussdate = y + "/" + m + "/" + d;
+
+					users.find({
+						"uid": data.uid
+					}).toArray(function(err1, user) {
+						var isgood = isrubbish = false;
+						for(let i = 0; i < data.good.length; i++) {
+							if(data.good[i] == req.body.uid) {
+								isgood = true;
+								break;
+							}
+						}
+						for(let i = 0; i < data.rubbish.length; i++) {
+							if(data.rubbish[i] == req.body.uid) {
+								isrubbish = true;
+								break;
+							}
+						}
+						info.push({
+							uid: data.uid,
+							discussid: data.id,
+							name: user[0].name,
+							image: user[0].image,
+							date: discussdate,
+							str: data.str,
+							good: data.good.length,
+							rubbish: data.rubbish.length,
+							isrubbish: isrubbish,
+							isgood: isgood
+						})
+						fornum += 1;
+						if(fornum >= datas.length) {
+							res.send(info);
+						} else {
+							getdata();
+						}
+					})
+				}
+				if(datas.length != 0) {
+					getdata();
+				}
+			} else {
 				console.log(err)
 			}
 		})
@@ -460,79 +501,101 @@ function mongocallback(dbs) {
 			y = date.getFullYear(),
 			m = date.getMonth() - 0 + 1,
 			d = date.getDate();
-			discussdate = y+"/"+m+"/"+d;
-		users.find({}).toArray(function(err,user){
-			if(!err){
-				discuss.find({}).toArray(function(err1,discusss){
-					if(!err1){
-						info.id = discusss.length-0+1;
+		discussdate = y + "/" + m + "/" + d;
+		users.find({}).toArray(function(err, user) {
+			if(!err) {
+				discuss.find({}).toArray(function(err1, discusss) {
+					if(!err1) {
+						info.id = discusss.length - 0 + 1;
 						info.good = [];
 						info.rubbish = [];
 						discuss.insertOne(info, function(err2, data) {
-							if(!err2){
+							if(!err2) {
 								info.image = user[0].image;
 								info.name = user[0].name;
 								info.date = discussdate;
+								info.good = 0;
+								info.rubbish = 0;
 								res.send(info)
-							}else{
+							} else {
 								console.log(err2)
 							}
 						})
-					}else{
+					} else {
 						console.log(err1)
 					}
 				})
-			}else{
+			} else {
 				console.log(err);
 			}
 		})
 	})
 
-  //给评论好评 / 取消好评
-  app.post("/discussgood",function(req,res){
-    /*
-    req.body = {
-      uid:1,
-      id:1,
-      isgood:true
-    }
-     */
-    console.log(req.body)
-    var set = {$pull:{"good":req.body.uid}};
-    if(req.body.isgood){
-     set = {$push:{"good":req.body.uid}}
-    }
-    console.log(set)
-    discuss.update({"id":Number(req.body.id)},set,function(err,data){
-      if(!err){
-        res.send("ok");
-      }else{
-        console.log(err);
-      }
-    })
-  })
-  
-  //给评论差评 / 取消差评
-  app.post("/discussrubbish",function(req,res){
-    /*
-    req.body = {
-      uid:1,
-      id:1,
-      isrubbish:true
-    }
-     */
-    var set = {$pull:{"rubbish":req.body.uid}};
-    if(req.body.isrubbish){
-     set = {$push:{"rubbish":req.body.uid}}
-    }
-    discuss.update({"id":Number(req.body.id)},set,function(err,data){
-      if(!err){
-        res.send("ok");
-      }else{
-        console.log(err);
-      }
-    })
-  })
+	//给评论好评 / 取消好评
+	app.post("/discussgood", function(req, res) {
+		/*
+		req.body = {
+		  uid:1,
+		  id:1,
+		  isgood:true
+		}
+		 */
+		console.log(req.body)
+		var set = {
+			$pull: {
+				"good": req.body.uid
+			}
+		};
+		if(req.body.isgood) {
+			set = {
+				$push: {
+					"good": req.body.uid
+				}
+			}
+		}
+		console.log(set)
+		discuss.update({
+			"id": Number(req.body.id)
+		}, set, function(err, data) {
+			if(!err) {
+				res.send("ok");
+			} else {
+				console.log(err);
+			}
+		})
+	})
+
+	//给评论差评 / 取消差评
+	app.post("/discussrubbish", function(req, res) {
+		/*
+		req.body = {
+		  uid:1,
+		  id:1,
+		  isrubbish:true
+		}
+		 */
+		var set = {
+			$pull: {
+				"rubbish": req.body.uid
+			}
+		};
+		if(req.body.isrubbish) {
+			set = {
+				$push: {
+					"rubbish": req.body.uid
+				}
+			}
+		}
+		discuss.update({
+			"id": Number(req.body.id)
+		}, set, function(err, data) {
+			if(!err) {
+				res.send("ok");
+			} else {
+				console.log(err);
+			}
+		})
+	})
 
 	//文章通过审核
 	app.post("/passarticle", function(req, res) {
@@ -553,7 +616,30 @@ function mongocallback(dbs) {
 
 	//拒绝文章
 	app.post("/nopassarticle", function(req, res) {
-
+		article.update({
+			"articleid": req.body.articleid
+		}, {
+			$set: {
+				"str": req.body.text
+			}
+		}, function(err, data) {
+			if(!err) {
+				res.send("ok");
+			} else {
+				console.log(err)
+			}
+		});
+	})
+	
+	//删除文章
+	app.post("/cleararticle",function(req,res){
+		article.remove({"articleid":Number(req.body.articleid)},function(err,data){
+			if(!err){
+				res.send("ok")
+			}else{
+				console.log(err)
+			}
+		})
 	})
 
 	//上传图片
@@ -589,6 +675,7 @@ function mongocallback(dbs) {
 		} else {
 			getObj.isshow = 1;
 		}
+		console.log(getObj)
 		article.find(getObj).sort(mysort).toArray(function(err, articlelist) {
 			var articles = [];
 			for(let i = 0; i < articlelist.length; i++) {
@@ -624,7 +711,9 @@ function mongocallback(dbs) {
 					name: articlelist[i].user.name,
 					praise: articlelist[i].attent.length,
 					details: details,
-					image: image
+					image: image,
+					str:articlelist[i].str,
+					istrue:articlelist[i].istrue
 				})
 			}
 			success(articles);

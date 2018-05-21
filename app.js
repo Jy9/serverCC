@@ -24,9 +24,10 @@ app.use(bodyParser.json({
 	extended: false
 }));
 
-var url = "mongodb://localhost:27017/CC";
+var URL = "http://ccskill.imwork.net:13205/";
+var mongourl = "mongodb://localhost:27017/CC";
 
-mongoClient.connect(url, function(err, db) {
+mongoClient.connect(mongourl, function(err, db) {
 	var dbs = db.db("CC");
 	mongocallback(dbs)
 });
@@ -655,7 +656,7 @@ function mongocallback(dbs) {
 		storage: storage
 	});
 	app.post('/upload/image', upload.single('image'), function(req, res) {
-		res.send("http://140.143.62.48/image/" + req.file.filename);
+		res.send(URL +"image/"+ req.file.filename);
 	})
 
 	function getlist(getObj, sort, isshow, success) {
@@ -720,11 +721,14 @@ function mongocallback(dbs) {
 	}
 }
 
-var options = {
+/*var options = {
 	key:fs.readFileSync('./2_ccskill.club.key'),
 	cert:fs.readFileSync('./1_ccskill.club_bundle.crt')
-};
+};*/
  
-var httpsServer = https.createServer(options, app).listen(80,function(){
+/*var httpsServer = https.createServer(options, app).listen(3000,function(){
 	console.log("80端口已启动！")
-});
+});*/
+app.listen(3000,function(){
+	console.log("3000端口已启动！")
+})
